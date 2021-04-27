@@ -11,7 +11,7 @@
 \texttt{\{quentin.bammey, rafael.grompone, jean-michel.morel\}@ens-paris-saclay.fr}}
 
 %------------------------------------------------------------------------------
-\ipolPreprintLink{http://www.ipol.im/}
+\ipolPreprintLink{https://ipolcore.ipol.im/demo/clientApp/demo.html?id=77777000095}
 
 %------------------------------------------------------------------------------
 \usepackage{subcaption}
@@ -77,7 +77,7 @@ article}. Usage instruction are included in the
 \end{ipolCode}
 
 \begin{ipolSupp}
-The link to the demo is \href{}{}.
+The link to the demo is \href{https://ipolcore.ipol.im/demo/clientApp/demo.html?id=77777000095}{https://ipolcore.ipol.im/demo/clientApp/demo.html?id=77777000095}.
 \end{ipolSupp}
 
 \ipolKeywords{image forensics, forgery detection}
@@ -88,13 +88,39 @@ The link to the demo is \href{}{}.
 
 %------------------------------------------------------------------------------
 \section{Method}
-During demosaicing, missing colours on each pixel are interpolated from its neighbours. As a consequence, pixels that are interpolated in a given channel are more likely to be an intermediate value, in other words, to be neither lower than all its direct neighbours nor higher than all of them. This is especially true with the most simple demosaicing algorithm, such as bilinear demosaicing which interpolate the three channels separately\qb{add figure with bilinear}.
+During demosaicing, missing colours on each pixel are interpolated from its neighbours. As a consequence, pixels that are interpolated in a given channel are more likely to be an intermediate value, in other words, to be neither lower than all its direct neighbours nor higher than all of them. This is especially true with the most simple demosaicing algorithm, such as bilinear demosaicing which interpolate the three channels separately.
 
 This method proposes to count the intermediate values corresponding to each of the four patterns. On the correct pattern, as most pixels are sampled, there should be fewer intermediate values than in the other patterns.
 
 \subsection{Intermediate values detection}
-Let $I$ be the channel of an image. The pixel at location $(x, y)$ is considered an intermediate value if $\min(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1}) \leq I_{x, y} \leq \max(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1})$.
+Let $I$ of shape $(X, Y)$ be one colour channel of an image. The pixel at location $(x, y)$ is considered an intermediate value if $\min(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1}) \leq I_{x, y} \leq \max(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1})$.
 
+We define $\mathcal M(I)$ as the mask of intermediate values of $I$. We define it as 1 if $(x, y)$ is an intermediate value of $I$, and $0$ otherwise.
+
+On the border of the image, either $x\pm1$ or $y\pm1$ is out of the image boundaries. To avoid border effects, we would thus have to mask out a 1-pixel border around the image. However, doing this would cause an imbalance in the number of pixels corresponding to different patterns, in other words their would be, in border windows, more pixels corresponding to one pattern than another. To solve the imbalance, we instead mask out a 2-pixels-wide border.
+
+More formally, the mask of intermediate values is thus defined as:
+\[\phantom.\mathcal M(I)_{x, y} \triangleq \left\{\begin{array}{ll}
+        0 &\text{if }x\in\{0, 1, X-2, X-1\}\text{ or }y\in\{0, 1, Y-2, Y-1\}\\
+        1 &\text{otherwise, if}\min(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1}) \leq I_{x, y} \leq \max(I_{x-1, y}, I_{x+1, y}, I_{x, y-1}, I_{x, y+1})\\
+0 &\text{otherwise}\end{array}\right.\]
+The computation of this mask is described in Algorithm~\ref{alg:intermediate}.
+
+Furthermore, to limit demosaicing artefacts, many demosaicing algorithm tend to avoid interpolating against strong gradients, such as against an edge, and thus often only interpolate in one direction (in which the gradient is smaller). To take this into account, we propose to replace the original isotropic intermediate values mask with bidirectional filters, that separately considers horizontally and vertically intermediate values. We define the mask of horizontal intermediate values as
+\[\phantom.\mathcal M(I)^h_{x, y} \triangleq \left\{\begin{array}{ll}
+        0 &\text{if }x\in\{0, 1, X-2, X-1\}\text{ or }y\in\{0, 1, Y-2, Y-1\}\\
+        1 &\text{otherwise, if}\min(I_{x-1, y}, I_{x+1, y}) \leq I_{x, y} \leq \max(I_{x-1, y}, I_{x+1, y})\\
+0 &\text{otherwise}\end{array}\right..\]
+Vertical values are computed in a similar way:
+\[\phantom.\mathcal M(I)^v_{x, y} \triangleq \left\{\begin{array}{ll}
+        0 &\text{if }x\in\{0, 1, X-2, X-1\}\text{ or }y\in\{0, 1, Y-2, Y-1\}\\
+        1 &\text{otherwise, if}\min(I_{x, y-1}, I_{x, y+1}) \leq I_{x, y} \leq \max(I_{x, y-1}, I_{x, y+1})\\
+0 &\text{otherwise}\end{array}\right..\]
+Under this definition, the bidirectional mask of intermediate values is then defined as the mean of the horizontal and vertical masks:
+\[\phantom.\mathcal M(I)_{x, y} \triangleq\frac 1 2 \left(M(I)^h_{x, y} + M(I)^v_{x, y}\right).\]
+It is thus null at the border and where a pixel is not an intermediate value, equal to $\frac 1 2$ where the pixel is either horizontally or vertically an intermediate value, and equal to $1$ when it is an intermediate value both horizontally and vertically. The computation of the isotropic mask is detailed in Algorithm~\ref{alg:intermediate_bidirectional}.
+
+The original isotropic mask and the bidirectional one will be compared in Section~\ref{sec:experiments}. For the rest of this section, we consider $R$, $G$ and $B$ the masks of intermediate values obtained on the respectively red, green and blue channels of the image. Which of the two methods was used to compute those masks is irrelevant to the rest of the algorithm.
 
 \begin{algorithm}[h]
 \caption{Mark intermediate values (original isotropic version)}
@@ -125,10 +151,10 @@ $\mathrm{ma}\assign \max{(\mathrm{arr}_{x+1, y}, \mathrm{arr}_{x, y-1}, \mathrm{
 
 mask $\assign \mathbf 0_{(X-4, Y-4)}$\;
 \For{$x$ \FROM 2 \TO $X-2$ \AND $y$ \FROM 2 \TO $Y-2$}{
-$\mathrm{mi}_h\assign \min(\mathrm{arr}_{x-1, y}, \mathrm{arr}_{x+1, y}$\;
-$\mathrm{ma}_h\assign \max(\mathrm{arr}_{x-1, y}, \mathrm{arr}_{x+1, y}$\;
-$\mathrm{mi}_v\assign \min(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1}$\;
-$\mathrm{ma}_v\assign \max(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1}$\;
+        $\mathrm{mi}_h\assign \min(\mathrm{arr}_{x-1, y}, \mathrm{arr}_{x+1, y})$\;
+        $\mathrm{ma}_h\assign \max(\mathrm{arr}_{x-1, y}, \mathrm{arr}_{x+1, y})$\;
+        $\mathrm{mi}_v\assign \min(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1})$\;
+        $\mathrm{ma}_v\assign \max(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1})$\;
 
 \If{$\mathrm{mi_h} \leq \mathrm{arr}_{x, y} \leq \mathrm{ma_h}$}
 {
@@ -143,12 +169,77 @@ $\mathrm{ma}_v\assign \max(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1}$\;
 }
 \end{algorithm}
 
+\subsection{Division into windows}
+The strategy to find forgeries using inconsistencies in the CFA patterns is to first find in which pattern the full image has been demosaiced, then to find the pattern used in different windows of the image. If a the pattern detected in a window is different than the one detected for the full image, then this window is inconsistent with the rest of the image and can be considered as forged.
+
+To improve the precision of detection, we do not simply use adjacent windows, but rather sliding windows with an overlap. The window size $W$ and stride are set as parameters of the algorithm. The stride determines the number of pixel between the left (or top) border of two consecutive windows, such as a stride equal to the window size leads to adjacent windows without overlapping, a stride equal to half the window size leads to a new window starting at the middle of the previous one, etc.
+
+Using a lower stride will not drastically improve the detection, but may help contour a detected forgery more precisely, at the cost of a slower algorithm.
+
+In the rest of this section, we consider the windowed intermediate values as of shape $(X_w, Y_w, 3, W, W)$, where $X_w$ and $Y_w$ are the number of windows in a row and in a column. In practice, the windows are computed in one dimension, and the full array is thus of shape $(X_w*Y_w, 3, W, W)$, and is only reshaped at the end of the computation.
+
+\subsection{Finding the pattern}
+The four patterns can be divided into two subgroups by their diagonal: \textsc{rggb} and \textsc{bggr} share the \textsc{·gg·} diagonal, whereas \textsc{grbg} and \textsc{gbrg} share the \textsc{g··g} diagonal. Because the Bayer CFA samples twice as many pixels in green than in red or blue, it is easier to find information on the pattern in the green channel. This is amplified by the fact that many demosaicing algorithms first interpolate the green channel by itself, but interpolate the red and blue channels using information from the green channel.
+
+As a consequence, the presented method first tries to detect the diagonal pattern using the green channel(\textsc{·gg·} or \textsc{g··g}), then uses the red and blue channels to compare the two potential patterns sharing that diagonal.
+
+Let $R$, $G$ and $B$ be the masks of intermediate values on the respectively red, green and blue channels, These masks, each of shape $(2X, 2Y)$, can represent either the full image or a window of it. To maintain the balance between patterns, those masks must be of even size. For this reasons, the window size must be even, and the last row/column of the full image is removed if necessary to ensure the evenness of the shape
+
+We start by looking at the green channel for the diagonal grids. The intermediate value count corresponding to the \textsc{·gg·} pattern is
+\[C_{\textsc{·gg·}} \triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(G_{2x+1, 2y} + G_{2x, 2y+1}\right)\]
+while the count corresponding to the \textsc{g··g} pattern is
+\[\phantom.C_{\textsc{g··g}} \triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(G_{2x, 2y} + G_{2x+1, 2y+1}\right).\]
+
+The count difference of the diagonal is then defined as
+\[\phantom.\Delta_{\mathrm{diag}}  \triangleq \frac 1 {2X\cdot Y} \left(C_{\textsc{·gg·}} - C_{\textsc{g··g}}\right)\]
+This difference is positive if the detected diagonal is \textsc{g··g}, and negative if it is \textsc{·gg·}:
+\[\phantom.D\triangleq\left\{\begin{array}{lc}\textsc{g··g}&\Delta_{\mathrm{diag}}>0\\\textsc{·gg·}&\Delta_{\mathrm{diag}}>0\\-1&\text{otherwise}\end{array}\right..\]
+        The normalization by $\frac{1}{2XY}$ means that the resulting difference is in $[-1, 1]$, and is equal to $\pm1$ if all pixels in one of the patterns are intermediate values, whereas the other pattern has no intermediate values--~$XY$ is the number of $2\times2$ blocks in a mask of shape $(2X, 2Y)$, and we sum two pixels in this block for each pattern. Note that the $\pm1$ limit is only theoretical: Even with bilinear demosaicing, where all interpolated pixels are intermediate values, sampled pixels can be intermediate too, eg.\@ in a slope. As a consequence, the difference will not reach those values in natural cases.
+
+Once we know the main diagonal, we can compare the two patterns sharing that diagonal. The green channel does not provide any information on this, so we use the red and blue channels.
+
+The count of intermediate values corresponding to each pattern is:
+\[\phantom.\begin{array}{ll}
+        C_{\textsc{rggb}} &\triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(R_{2x, 2y} + B_{2x+1, 2y+1}\right)\\
+        C_{\textsc{bggr}} &\triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(R_{2x+1, 2y+1} + B_{2x, 2y}\right)\\
+        C_{\textsc{grbg}} &\triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(R_{2x+1, 2y} + B_{2x, 2y+1}\right)\\
+        C_{\textsc{gbrg}} &\triangleq \sum_{x=0}^X\sum_{y=0}^Y\left(R_{2x, 2y+1} + B_{2x+1, 2y}\right)
+\end{array}.\]
+
+The count differences of the two pattern pairs are then defined as
+\[\begin{array}{ll}
+        \Delta_{\textsc{rggb}-\textsc{bggr}} &\triangleq \frac 1 {2XY}\left( C_{\textsc{rggb}} - C_{\textsc{bggr}}\right)\\
+\Delta_{\textsc{grbg}-\textsc{gbrg}} &\triangleq \frac 1 {2XY}\left(C_{\textsc{rggb}} - C_{\textsc{gbrg}}\right)\end{array}\]
+and are then combined into the main grid difference
+\[\phantom.\Delta_{\mathrm{main}}\triangleq\left\{\begin{array}{lc}
+        \Delta_{\textsc{rggb}-\textsc{bggr}}&D=\textsc{g··g}\\
+\Delta_{\textsc{grbg}-\textsc{gbrg}}&D=\textsc{·gg·}\end{array}\right..\]
+Finally, the main detected grid can be obtained:
+\[\phantom.M \triangleq \left\{\begin{array}{lc}
+        \textsc{rggb}&D=\textsc{·gg·}\text{ and }\Delta_{\mathrm{main}}<0\\
+        \textsc{bggr}&D=\textsc{·gg·}\text{ and }\Delta_{\mathrm{main}}>0\\
+        \textsc{grbg}&D=\textsc{g··g}\text{ and }\Delta_{\mathrm{main}}<0\\
+        \textsc{gbrg}&D=\textsc{g··g}\text{ and }\Delta_{\mathrm{main}}>0\\
+-1&\text{otherwise}\end{array}\right..\]
+
+Both for the diagonal and main grids, if there is strict equality in the two counts detected, no grid is considered detected. Naturally, if no decision is taken on the diagonal, no main grid is selected either.
+
+The grid detection is detailed in Algorithm~\ref{alg:grid}.
+
+While $\Delta_{\mathrm{main}}$ is later used to make the decisions on forgeries, the two intermediary comparisons $\Delta_{\textsc{rggb}-\textsc{bggr}}$ and $\Delta_{\textsc{grbg}-\textsc{gbrg}}$ are easier to understand visually, and are thus kept for visualization.
+
+Our implementation of the count difference computation is slightly different from the description of the original article. In the original article, the difference is not normalised by $\frac 1 {2XY}$. More importantly, the difference is computed separately in the red and blue channels, and the strongest of the two is kept, whereas we use their sum.
+The reason for this is that the original article only tries to classify in which pattern an image has been sampled, without considering how confident one can be in the detection, or how to use it to detect forgeries. When only considering classification of an image or window into the four patterns, both the original article and our implementation provide the same results. However, adding the normalization and summing the two channels makes it easier for us to also compute a confidence value for the detections, which will be described in the next subsection.
+
+Finally, we note that even though this algorithm is presented for one window, the grid detection is in practice done on all windows simultaneously.
+
 \begin{algorithm}[h]
 \caption{Find the grid}
 \label{alg:grid}
 \Function{find\_grid(R, G, B)}
 {
-\Input{R}{Array of size $(X, Y)$, typically as returned by \FuncSty{is\_intermediate} or a sub-window of it on the red channel}
+        \qb{TBD: reorder the final if blocks to follow what is explained and done (even though this is equivalent).}
+\Input{R}{Array of even size $(2X, 2Y)$, typically as returned by \FuncSty{is\_intermediate} or a sub-window of it on the red channel}
 \Input{G}{Same as above for the green channel}
 \Input{B}{Same as above for the blue channel}
 \Output{main}{CFA pattern identified by the function (one of \textsc{rggb}, \textsc{grbg}, \textsc{gbrg}, \textsc{bggr})}
@@ -156,23 +247,23 @@ $\mathrm{ma}_v\assign \max(\mathrm{arr}_{x, y-1}, \mathrm{arr}_{x, y+1}$\;
 \Output{diff\_main}{Difference of count in intermediate values between the two pattern sharing the same diagonal. Positive if the best pattern is \textsc{rggb} or \textsc{grbg}, negative if the best pattern is \textsc{gbrg} or \textsc{bggr}.}
 \Output{diff\_diag}{Difference of count of intermediate values between the two diagonal patterns.}
 \Comment{First we select the best diagonal pattern using the green values}
-$\mathrm{count_{*GG*}}\assign \sum_{x=0}^{\frac X 2}G_{2x,2y+1} + G_{2x+1, 2y}$\;
-$\mathrm{count_{G**G}}\assign \sum_{x=0}^{\frac X 2}G_{2x,2y} + G_{2x+1, 2y+1}$\;
-$\mathrm{diff\_diag} \assign \frac 2{XY}\left(\mathrm{count_{*GG*}} - \mathrm{count_{G**G}}\right)$\;
+        $\mathrm{count_{*GG*}}\assign \sum_{x=0}^X\sum_{y=0}^YG_{2x,2y+1} + G_{2x+1, 2y}$\;
+        $\mathrm{count_{G**G}}\assign \sum_{x=0}^X\sum_{y=0}^YG_{2x,2y} + G_{2x+1, 2y+1}$\;
+$\mathrm{diff\_diag} \assign \frac 1{2XY}\left(\mathrm{count_{*GG*}} - \mathrm{count_{G**G}}\right)$\;
 \If{$\mathrm{diff\_diag}$ < 0}{
-main$\assign$ \textsc{·gg·}\;
+diag$\assign$ \textsc{·gg·}\;
 }
 \Else{
-main$\assign$ \textsc{g··g}\;
+diag$\assign$ \textsc{g··g}\;
 }
 
 \Comment{Now we select within the two patterns sharing the detected diagonal.}
 \If{diff\_diag$=$\textsc{·gg·}}
 {
 \Comment{Either \textsc{rggb} or \textsc{bggr}}
-$\mathrm{count_{RGGB}}\assign \sum_{x=0}^{\frac X 2}R_{2x,2y} + B_{2x+1, 2y+1}$\;
-$\mathrm{count_{BGGR}}\assign \sum_{x=0}^{\frac X 2}R_{2x+1,2y+1} + B_{2x, 2y}$\;
-$\mathrm{diff\_main} \assign \frac 2{XY}\left(\mathrm{count_{RGGB}} - \mathrm{count_{BGGR}}\right)$\;
+        $\mathrm{count_{RGGB}}\assign \sum_{x=0}^{X}\sum_{y=0}^YR_{2x,2y} + B_{2x+1, 2y+1}$\;
+        $\mathrm{count_{BGGR}}\assign \sum_{x=0}^X\sum_{y=0}^Y R_{2x+1,2y+1} + B_{2x, 2y}$\;
+$\mathrm{diff\_main} \assign \frac 1{2XY}\left(\mathrm{count_{RGGB}} - \mathrm{count_{BGGR}}\right)$\;
 \If{$\mathrm{diff\_main}$ < 0}{
 main$\assign$ \textsc{rggb}\;
 }
@@ -197,6 +288,30 @@ main$\assign$ \textsc{gbrg}\;
 }
 \end{algorithm}
 
+\subsection{Forgery detection}
+Using the previously-described algorithms, we can compute the intermediate value masks in all channels, cut them into windows, and detect the diagonal and pattern of the global image and of each window.
+
+With this information, we could simply say that the windows which do not use the same pattern than the main grid correspond to forged regions. However, doing this creates many false positives, as the detection is not always correct.
+
+We do not propose here a way to automatically decide, without arbitrary parameters, which region to detect as forged. However, we show that a simple thresholding can filter out most of the false, noise-like positives, while keeping the relevant detections.
+
+We segment the windows into connected components by their grids. In other words, a connected component is a set of spatially connected windows whose detected pattern is the same.
+This segmentation is done with \texttt{scikit-image}~\cite{skimage}.
+
+Components whose detected pattern is the global image's are immediately discarded; they are not considered forged as they are coherent with the full image.
+For components whose detected pattern is different, we consider them as forged, with a confidence value which corresponds to the maximum absolute difference of count of all windows in that components (either $|\Delta_{\mathrm{main}}|$ or $|\Delta_{\mathrm{diag}}|$ depending on whether we are looking at the full pattern or the diagonal). In other words, the confidence of a component is that of the most prominent window it contains.
+
+We thus have two confidence maps: one for the diagonal and one for the full pattern. Those two are merged into a final detection map by taking its local maximum.
+
+If someone needed a binary output map, thresholding this map with a threshold $\gamma$ would amount to performing grid-by-grid hysteresis thresholding on the original confidence map, with a lower threshold 0 and a higher threshold $\gamma$.
+
+We noted earlier that the maximal value of the difference, $\pm1$, was only theoretical and would not be reached in natural cases. Even with simple algorithms, this value rarely goes out of $[-0.3, 0.3]$. As a consequence, a region detected with a confidence region of, for instance, 0.2, should already be considered as detected with high confidence.
+
+We do not normalize it further for the demo. However, when the detection map needs to be normalized to $[0, 1]$, for instance when computing metrics on the results, we propose to clip the output to $[0, \gamma]$, then to divide the result by $\gamma$ to have an output in the desired range. Our experiments show that, on the Trace~\cite{trace} dataset used, a value of $\gamma=X$\qb{provide value} provided good results. This is, however, not a claim that this threshold is optimal for any usage. The choice of the threshold is left to the user.
+
+
+
+
 \begin{algorithm}[h]
         \caption{Global algorithm}
         \label{alg:global}
@@ -212,7 +327,7 @@ main$\assign$ \textsc{gbrg}\;
                 \Output{coords$_x$, coords$_y$}{Coordinates corresponding to the center of each window.}
                 \Comment{Crop the image if needed, as $X$ and $Y$ need to be even.}
                 $\mathrm{img} \assign \mathrm{img}[:X-X\%2, :Y-Y\%2]$\;
-                $\mathrm{intermediate} \assign \mathtt{is_intermediate}(\mathrm{img})$\;
+                $\mathrm{intermediate} \assign \mathtt{is\_intermediate}(\mathrm{img})$\;
                 $\mathrm{windows}, \mathrm{coords_x}, \mathrm{coords_y} \assign \mathtt{get\_windows}(\mathrm{intermediate}, W, \mathrm{stride})$\;
                 \Comment{Correct the coordinates to account for the lost border from \texttt{is\_intermediate}.}
                 $\mathrm{coords_x}, \mathrm{coords_y} \peq 2$\;
@@ -221,26 +336,41 @@ main$\assign$ \textsc{gbrg}\;
                 $\mathrm{global\_main}, \mathrm{global\_diag}, \_, \_ = \mathtt{find\_grid}(\mathrm{intermediate}[:, :, 0], \mathrm{intermediate}[:, :, 1], \mathrm{intermediate}[:, :, 2])$\;
                 $\mathrm{main}, \mathrm{diag}, \mathrm{diff\_main}, \mathrm{diff\_diag} \assign \mathbf{0}_{X_w, Y_w}$\;
                 \For{$x$ \FROM 0 \TO $X_w$ \AND $y$ \FROM 0 \TO $Y_w$}{
-                        $\mathrm{main}[x, y], \mathrm{diag}[x, y], \mathrm{diff\_main}[x, y], \mathrm{diff\_grid}[x, y] \assign \mathtt{find\_grid(\mathrm{windows}[x, y, 0], \mathrm{windows}[x, y, 1], \mathrm{windows}[x, y, 2])}$\;
+                        $\mathrm{main}[x, y], \mathrm{diag}[x, y], \mathrm{diff\_main}[x, y], \mathrm{diff\_diag}[x, y] \assign \mathtt{find\_grid(\mathrm{windows}[x, y, 0], \mathrm{windows}[x, y, 1], \mathrm{windows}[x, y, 2])}$\;
                 }
                 \Comment{Find inconsistent regions}
                 $\mathrm{forged\_diag} \assign \mathrm{diag}\neq\mathrm{global\_diag}$\;
                 $\mathrm{forged\_main} \assign \mathrm{main}\neq\mathrm{global\_main}$\;
-                \Comment{Hysteresis thresholding}
-                $\mathrm{forged\_main\_thresholded}  \assign \mathbf 0_{X_w, Y_w}$\;
-                \For{$g\in(\textsc{rggb}, \textsc{grbg}, \textsc{gbrg}, \textsc{bggr})$}
+                \Comment{Soft values}
+                $\mathrm{labels\_main} \assign \mathtt{label_connected}(\mathrm{diag, global\_diag})$\;
+                $\mathrm{forged\_main\_soft}\assign\mathbf0_{X_W, Y_W}$\;
+                \For{$\mathrm{label}$ \FROM 0 \TO $\max(\mathrm{labels\_main})$}
                 {
-                        \If{$g\neq\mathrm{global_main}$}
-                        {
-                                \Comment{Absolute difference where the grid is $g$, 0 elsewhere}
-                                $\mathrm{values} \assign |\mathrm{diff\_main}|\odot(\mathrm{grid}=g)$\;
-                                $\mathrm{forged\_main\_thresholded} \peq \mathtt{apply\_hysteresis\_threshold}(\mathrm{values}, 0, \mathrm{threshold})$\;
-                        }
+                        $\mathrm{forged\_main\_soft}\peq \max\left((\mathrm{labels\_main}=\mathrm{label})\odot|\mathrm{diff\_main}|\right)$\;
                 }
-                \Comment{Same on the diagonals}
-                $\mathrm{values} \assign |\mathrm{diff\_diag}|\odot(\mathrm{diag}\neq\mathrm{global\_diag})$\;
-                $\mathrm{forged\_diag\_thresholded} \assign \mathtt{apply\_hysteresis\_threshold}(\mathrm{values}, 0, \mathrm{threshold})$\;
-                \Return{main, diag, forged\_main, forged\_diag, forged\_main\_thresholded, forged\_diag\_thresholded, diff\_main, diff\_diag, coords$_x$, coords$_y$}
+                $\mathrm{labels\_diag} \assign \mathtt{label_connected}(\mathrm{diag, global\_diag})$\;
+                $\mathrm{forged\_diag\_soft}\assign\mathbf0_{X_W, Y_W}$\;
+                \For{$\mathrm{label}$ \FROM 0 \TO $\max(\mathrm{labels\_diag})$}
+                {
+                        $\mathrm{forged\_diag\_soft}\peq \max\left((\mathrm{labels\_diag}=\mathrm{label})\odot|\mathrm{diff\_diag}|\right)$\;
+                }
+                
+                
+
+                %$\mathrm{forged\_main\_thresholded}  \assign \mathbf 0_{X_w, Y_w}$\;
+                %\For{$g\in(\textsc{rggb}, \textsc{grbg}, \textsc{gbrg}, \textsc{bggr})$}
+                %{
+                        %\If{$g\neq\mathrm{global_main}$}
+                        %{
+                                %\Comment{Absolute difference where the grid is $g$, 0 elsewhere}
+                                %$\mathrm{values} \assign |\mathrm{diff\_main}|\odot(\mathrm{grid}=g)$\;
+                                %$\mathrm{forged\_main\_thresholded} \peq \mathtt{apply\_hysteresis\_threshold}(\mathrm{values}, 0, \mathrm{threshold})$\;
+                        %}
+                %}
+                %\Comment{Same on the diagonals}
+                %$\mathrm{values} \assign |\mathrm{diff\_diag}|\odot(\mathrm{diag}\neq\mathrm{global\_diag})$\;
+                %$\mathrm{forged\_diag\_thresholded} \assign \mathtt{apply\_hysteresis\_threshold}(\mathrm{values}, 0, \mathrm{threshold})$\;
+                \Return{main, diag, forged\_main, forged\_diag, forged\_main\_soft, forged\_diag\_soft, diff\_main, diff\_diag, coords$_x$, coords$_y$}
         }
 \end{algorithm}
 
@@ -248,7 +378,7 @@ main$\assign$ \textsc{gbrg}\;
 \clearpage
 
 
-
+\iffalse
 
 %------------------------------------------------------------------------------
 \section{Experiments}
@@ -326,7 +456,6 @@ To evaluate the ability of this method to detect the CFA pattern correctly, we t
 \end{figure}
 
 \subsection{CFA pattern detection}
-\iffalse
 \begin{table}[ht]
     \centering
     \begin{tabular}{lcc}
@@ -915,7 +1044,6 @@ With the AAHD and DHT algorithm, the method consistently detects the wrong diago
 \caption{Results of the method on $64\times64$ blocks on two images, unprocessed and median-filtered. The median filter shifts the intermediate values on the green channel, thus confusing the algorithm on the diagonal pattern. Consequently, with the AAHD and DHT algorithms, which already shift the green channel intermediate values into the sampled pixels, the algorithms makes better detection after median-filtering than on the unprocessed image.}
 \label{fig:median}
 \end{figure}
-\fi
 
 \clearpage
 \subsection{Image forgery detection}
@@ -1099,7 +1227,7 @@ Here is the conclusion
 %------------------------------------------------------------------------------
 \section*{Acknowledgment}
 
-
+\fi
 %------------------------------------------------------------------------------
 \section*{Image Credits}
 {\small\flushleft
