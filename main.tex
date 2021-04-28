@@ -15,7 +15,7 @@
 
 %------------------------------------------------------------------------------
 \usepackage{subcaption}
-\usepackage[dvipsnames]{xcolor}
+\usepackage[dvipsnames, table]{xcolor}
 
 %All the colours we used for the database articles. c0, c1, c2 and c3 go nicely together
 \definecolor{c0}{HTML}{0E918C}
@@ -25,6 +25,10 @@
 \definecolor{grayA}{HTML}{D2D3C9}
 \definecolor{cgray}{HTML}{708090}
 \definecolor{cgreen}{HTML}{1F8C88}
+
+\usepackage{soul}
+\sethlcolor{c0!50}
+
 \usepackage[vlined,algoruled,linesnumbered]{algorithm2e}
 \usepackage{namedinput}
 
@@ -54,11 +58,11 @@
 \usepackage{booktabs} % table
 \usepackage{multirow}
 \usepackage{array}
-
+\usepackage{tikz}
 \usepackage{amsmath, amssymb}
 \DeclareMathOperator*{\argmax}{arg\,max}
 
-\renewcommand*{\thesubfigure}{(\thefigure.\arabic{subfigure})}
+%\renewcommand*{\thesubfigure}{(\thefigure.\arabic{subfigure})}
 %------------------------------------------------------------------------------
 \newcommand{\qb}[1]{\textcolor{c1}{(Quentin) #1}}
 
@@ -66,7 +70,7 @@
 
 
 \begin{ipolAbstract}
-Here is the abstract.
+        Camera only sample images in one colour channel per pixel. The remaining channels are interpolated from neighbouring pixels during demosaicing. This operation leaves traces, that can be exploited to authentify images and detect forgeries. This paper describes a method that exploits the fact that interpolated pixels are more prone to be intermediate values to detect in which pattern an image has been sampled. We then use this information to find regions that are inconsistent with the global image. We attribute a confidence score to each detection, which can then be thresholded to provide a binary map of detected forgeries.
 \end{ipolAbstract}
 
 \begin{ipolCode}
@@ -85,6 +89,88 @@ The link to the demo is \href{https://ipolcore.ipol.im/demo/clientApp/demo.html?
 
 %------------------------------------------------------------------------------
 \section{Introduction}
+
+\begin{figure}[ht]
+        \centering
+        \begin{subfigure}{.4\linewidth}
+                \centering
+                \includegraphics[width=.6\linewidth]{images/cfa.png}
+                \label{fig:bayer}
+                \caption{The Bayer CFA, by far the most commonly used CFA}
+        \end{subfigure}\hfill%
+        \begin{subfigure}{.6\linewidth}
+                \centering
+                \begin{tabular}{cc}
+                        \includegraphics[width=40pt]{images/rggb.png}&\includegraphics[width=40pt]{images/grbg.png}\\
+                        \textsc{rggb}&\textsc{grbg}\\
+                        \includegraphics[width=40pt]{images/gbrg.png}&\includegraphics[width=40pt]{images/bggr.png}\\
+                        \textsc{gbrg}&\textsc{bggr}\\
+                \end{tabular}
+                \label{fig:4patterns}
+                \caption{The four potential patterns that arise from the Bayer CFA.}
+        \end{subfigure}
+        \caption{The Bayer Colour Filter Array(CFA), and the four potential patterns that arise from it. The pattern identifies the position of the top-left red-sampled pixel in an image.}
+\end{figure}
+
+Most cameras cannot see true colour images. They can only sample one colour per pixel using a colour filter array (CFA), and must interpolate the missing values. The most common CFA is the Bayer matrix, shown in Figure~\ref{fig:bayer}. It is made of a simple $2\times2$ pattern, which samples twice as many pixels in green as in red or blue. Because interpolation leaves traces, it is sometimes possible to identify in which pattern an image has been sampled, in other words, to know which of the four blocks seen in Figure~\ref{fig:4patterns} represent the first sampled pixels at the image origin.
+
+If there is a forgery in an images, chances are the pattern in the manipulated area will not coincide with the rest of the image. For instance, if part of an image is copied and pasted onto another (or potentially the same) image, there is a $\frac34$ chance that the patterns will not be aligned, as can be seen in Figure~\ref{fig:forgeryshift}. If this shift in the periodic pattern of sampled colours can be detected, then it will consitute an important evidence as to the presence of a forgery.
+
+\begin{figure}[ht]
+        \centering
+        \begin{subfigure}{.5\linewidth}
+                \includegraphics[width=.9\linewidth]{images/bayer.png}
+                \caption{Authentic image}
+        \end{subfigure}\hfill%
+        \begin{subfigure}{.5\linewidth}
+                \includegraphics[width=.9\linewidth]{images/bayer_forged.png}
+                \caption{Forged image}
+        \end{subfigure}
+        \label{fig:forgeryshift}
+        \caption{Colours in which pixels are sampled in an authentic and forged image. In the forged area of the second image, there is a $\frac34$ probability that the patterns of the authentic and forged area are misaligned, causing a shift in the otherwise-periodic CFA.}
+\end{figure}
+
+The method we present here, originally proposed by Choi et al.~\cite{choi}, uses the fact that demosaicing is basically an interpolation operation. As a consequence, interpolated pixels are more often intermediate values between among their immediate neighbours, as seen in Figure~\ref{fig:intermediate_values}. For instance, with the simple bilinear demosaicing, missing colours are directly averaged from the direct neighbours that were originally sampled in that colour, and are thus always intermediate values. 
+
+\begin{figure}[ht]
+        \centering
+        \begin{subfigure}[t]{.5\linewidth}
+                \centering
+                \begin{tabular}{cccccccccc}
+                        18 & \textcolor{c2}{56} & 94 & \textcolor{c2}{85} & 76 & \textcolor{c2}{96} & 116 & \textcolor{c2}{104}\\
+                        \textcolor{c2}{49} & \cellcolor{c0!50}{\textcolor{c2}{56}} & \cellcolor{c0!50}{\textcolor{c2}{63}} & \cellcolor{c0!50}{\textcolor{c2}{52}} & \cellcolor{c0!50}{\textcolor{c2}{41}} & \cellcolor{c0!50}{\textcolor{c2}{64}} & \cellcolor{c0!50}{\textcolor{c2}{88}} & \textcolor{c2}{87}\\
+                        80 & \cellcolor{c0!50}{\textcolor{c2}{56}} & \cellcolor{c0!50}{32} & \cellcolor{c0!50}{\textcolor{c2}{19}} & 6 & \cellcolor{c0!50}{\textcolor{c2}{33}} & \cellcolor{c0!50}{60} & \textcolor{c2}{70}\\
+                        \textcolor{c2}{59} & \cellcolor{c0!50}{\textcolor{c2}{62}} & \cellcolor{c0!50}{\textcolor{c2}{66}} & \cellcolor{c0!50}{\textcolor{c2}{49}} & \cellcolor{c0!50}{\textcolor{c2}{32}} & \cellcolor{c0!50}{\textcolor{c2}{59}} & \cellcolor{c0!50}{\textcolor{c2}{87}} & \textcolor{c2}{88}\\
+                        38 & \cellcolor{c0!50}{\textcolor{c2}{69}} & 100 & \cellcolor{c0!50}{\textcolor{c2}{79}} & \cellcolor{c0!50}{58} & \cellcolor{c0!50}{\textcolor{c2}{86}} & 114 & \textcolor{c2}{106}\\
+                        \textcolor{c2}{40} & \cellcolor{c0!50}{\textcolor{c2}{51}} & \cellcolor{c0!50}{\textcolor{c2}{63}} & \cellcolor{c0!50}{\textcolor{c2}{74}} & \cellcolor{c0!50}{\textcolor{c2}{85}} & \cellcolor{c0!50}{\textcolor{c2}{75}} & \cellcolor{c0!50}{\textcolor{c2}{66}} & \textcolor{c2}{63}\\
+                        42 & \cellcolor{c0!50}{\textcolor{c2}{34}} & 26 & \cellcolor{c0!50}{\textcolor{c2}{69}} & 112 & \cellcolor{c0!50}{\textcolor{c2}{65}} & 18 & \textcolor{c2}{21}\\
+                        \textcolor{c2}{38} & \textcolor{c2}{47} & \textcolor{c2}{57} & \textcolor{c2}{75} & \textcolor{c2}{94} & \textcolor{c2}{72} & \textcolor{c2}{50} & \textcolor{c2}{35}\\
+                \end{tabular}
+                \caption{Red channel}
+        \end{subfigure}\hfill%
+        \begin{subfigure}[t]{.5\linewidth}
+                \centering
+                \begin{tabular}{cccccccccc}
+                    \textcolor{c2}{139} & 240 & \textcolor{c2}{154} & 16 & \textcolor{c2}{94} & 56 & \textcolor{c2}{72} & 20\\
+                    92 & \cellcolor{c0!50}{\textcolor{c2}{131}} & 168 & \cellcolor{c0!50}{\textcolor{c2}{76}} & 72 & \cellcolor{c0!50}{\textcolor{c2}{94}} & 24 & \textcolor{c2}{43}\\
+                    \textcolor{c2}{85} & 24 & \cellcolor{c0!50}{\textcolor{c2}{100}} & 48 & \cellcolor{c0!50}{\textcolor{c2}{102}} & 224 & \cellcolor{c0!50}{\textcolor{c2}{130}} & 72\\
+                    60 & \cellcolor{c0!50}{\textcolor{c2}{107}} & 160 & \cellcolor{c0!50}{\textcolor{c2}{68}} & \cellcolor{c0!50}{64} & \cellcolor{c0!50}{\textcolor{c2}{122}} & 200 & \textcolor{c2}{153}\\
+                    \textcolor{c2}{92} & 184 & \cellcolor{c0!50}{\textcolor{c2}{125}} & 0 & \cellcolor{c0!50}{\textcolor{c2}{50}} & 0 & \cellcolor{c0!50}{\textcolor{c2}{133}} & 108\\
+                    52 & \cellcolor{c0!50}{\textcolor{c2}{155}} & 156 & \cellcolor{c0!50}{\textcolor{c2}{76}} & 136 & \cellcolor{c0!50}{\textcolor{c2}{117}} & 224 & \textcolor{c2}{127}\\
+                    \textcolor{c2}{146} & 228 & \cellcolor{c0!50}{\textcolor{c2}{111}} & 12 & \cellcolor{c0!50}{\textcolor{c2}{110}} & \cellcolor{c0!50}{108} & \cellcolor{c0!50}{\textcolor{c2}{107}} & 44\\
+                    56 & \textcolor{c2}{114} & 48 & \textcolor{c2}{90} & 184 & \textcolor{c2}{141} & 52 & \textcolor{c2}{90}\\
+                \end{tabular}
+                \caption{Green channel}
+        \end{subfigure}
+        \label{fig:intermediate_values}
+        \caption{Red and green channels of a toy image demosaiced with bilinear interpolation in the \textsc{rggb} pattern. \textcolor{c2}{Red values} correspond to positions where the value was interpolated. \hl{Highlighted} cells correspond to pixels that take an intermediate value, ie.\@ that are not a local extrema among their direct neighbourhood. While sampled pixels can have intermediate values, many more can be found among \textcolor{c3}{interpolated pixels} in both the red and green channel. The blue channel, not shown here, behave similarly to the red one.}
+\end{figure}
+
+Of course, this certainty is no longer true with more complex algorithms, which interpolate pixels using further samples and across channels. Nevertheless, with most algorithms, an interpolated pixel is still more likely to be an intermediate value than a sampled one.
+
+In this paper, we describe, analyze and expand this method.
+The original article explains how to detect in which pattern an image, or part of it, has been sampled. Starting from there, we detect which regions of an image are inconsistent with the main image, and attribute a confidence score to this detection.
+We also propose another way of computing intermediate values, which yields slightly better results. 
 
 %------------------------------------------------------------------------------
 \section{Method}
@@ -179,6 +265,21 @@ Using a lower stride will not drastically improve the detection, but may help co
 In the rest of this section, we consider the windowed intermediate values as of shape $(X_w, Y_w, 3, W, W)$, where $X_w$ and $Y_w$ are the number of windows in a row and in a column. In practice, the windows are computed in one dimension, and the full array is thus of shape $(X_w*Y_w, 3, W, W)$, and is only reshaped at the end of the computation.
 
 \subsection{Finding the pattern}
+\begin{figure}[h]
+        \centering
+        \begin{tabular}{ccccc}
+                \multicolumn{2}{c}{\includegraphics[width=30pt]{images/xggx.png}}&&\multicolumn{2}{c}{\includegraphics[width=30pt]{images/gxxg.png}}\\
+                \multicolumn{2}{c}{\textsc{·gg·}} && \multicolumn{2}{c}{\textsc{g··g}}\\
+                \includegraphics[width=30pt]{images/rggb.png}&
+                \includegraphics[width=30pt]{images/bggr.png}&
+                \qquad\qquad& %ugly hack I know
+                \includegraphics[width=30pt]{images/grbg.png}&
+                \includegraphics[width=30pt]{images/gbrg.png}\\
+                \textsc{rggb} & \textsc{bggr} && \textsc{grbg} & \textsc{gbrg}\\
+        \end{tabular}
+        \label{fig:fourpatterns}
+        \caption{The four possible sampling patterns can be grouped by the diagonal on which the green channel was sampled: \textsc{rggb} and \textsc{bggr} share the \textsc{·gg·} diagonal, whereas \textsc{grbg} and \textsc{gbrg} share the \textsc{g··g} one.}
+\end{figure}
 The four patterns can be divided into two subgroups by their diagonal: \textsc{rggb} and \textsc{bggr} share the \textsc{·gg·} diagonal, whereas \textsc{grbg} and \textsc{gbrg} share the \textsc{g··g} diagonal. Because the Bayer CFA samples twice as many pixels in green than in red or blue, it is easier to find information on the pattern in the green channel. This is amplified by the fact that many demosaicing algorithms first interpolate the green channel by itself, but interpolate the red and blue channels using information from the green channel.
 
 As a consequence, the presented method first tries to detect the diagonal pattern using the green channel(\textsc{·gg·} or \textsc{g··g}), then uses the red and blue channels to compare the two potential patterns sharing that diagonal.
@@ -287,30 +388,29 @@ main$\assign$ \textsc{gbrg}\;
 \Return{main, diag, diff\_main, diff\_diag}
 }
 \end{algorithm}
-
 \subsection{Forgery detection}
 Using the previously-described algorithms, we can compute the intermediate value masks in all channels, cut them into windows, and detect the diagonal and pattern of the global image and of each window.
 
 With this information, we could simply say that the windows which do not use the same pattern than the main grid correspond to forged regions. However, doing this creates many false positives, as the detection is not always correct.
 
-We do not propose here a way to automatically decide, without arbitrary parameters, which region to detect as forged. However, we show that a simple thresholding can filter out most of the false, noise-like positives, while keeping the relevant detections.
 
-We segment the windows into connected components by their grids. In other words, a connected component is a set of spatially connected windows whose detected pattern is the same.
+%We do not propose here a way to automatically decide, without arbitrary parameters, which region to detect as forged. However, we show that a simple thresholding can filter out most of the false, noise-like positives, while keeping the relevant detections.
+In first instance, if the grid of a window does not match the global image's grid, we can consider that window forged with a confidence of $|\Delta_{\mathrm{main}}|$ (or $|\Delta_{\mathrm{diag}}|$ if looking at the diagonals). However, if the threshold is low, isolated detections of a given grid will be detected by mistake. On the contrary, in a region with many windows sharing the same grid, only those above the threshold will be detected, so a high threshold will cause most of the detections to be missed. In both cases, using a fixed threshold will lead to mistakes that would be easy to avoid by looking at the map more globally.
+
+We propose to segment the windows into connected components by their grids. In other words, a connected component is a set of spatially connected windows whose detected pattern is the same.
 This segmentation is done with \texttt{scikit-image}~\cite{skimage}.
 
 Components whose detected pattern is the global image's are immediately discarded; they are not considered forged as they are coherent with the full image.
 For components whose detected pattern is different, we consider them as forged, with a confidence value which corresponds to the maximum absolute difference of count of all windows in that components (either $|\Delta_{\mathrm{main}}|$ or $|\Delta_{\mathrm{diag}}|$ depending on whether we are looking at the full pattern or the diagonal). In other words, the confidence of a component is that of the most prominent window it contains.
 
-We thus have two confidence maps: one for the diagonal and one for the full pattern. Those two are merged into a final detection map by taking its local maximum.
+Applying this method to both the diagonal and the full pattern detections yields two confidence maps. We merge those two confidence maps into one by taking their pointwise maximum.
 
-If someone needed a binary output map, thresholding this map with a threshold $\gamma$ would amount to performing grid-by-grid hysteresis thresholding on the original confidence map, with a lower threshold 0 and a higher threshold $\gamma$.
+These confidence maps are useful to visualize the detection. However, they do not consitute by themselves a decision on the detection. They cannot either be used as a heatmap: the maximal absolute value of the difference, $1$, is never reached in actual cases, and even the most confident detections will rarely reach a score of $0.3$. 
 
-We noted earlier that the maximal value of the difference, $\pm1$, was only theoretical and would not be reached in natural cases. Even with simple algorithms, this value rarely goes out of $[-0.3, 0.3]$. As a consequence, a region detected with a confidence region of, for instance, 0.2, should already be considered as detected with high confidence.
+To make a final decision on the image, we thus threshold the obtained confidence map by a given threshold $\gamma$. This is equivalent to performing hysteresis thresholding with a lower threshold 0 and a higher threshold $\gamma$ on each map $(M=g)\odot |\Delta_{\mathrm{main}}|$ for each pattern $g$ except the full image's pattern, and $(D\neq d_{\mathrm{img}})\odot|\Delta_{\mathrm{diag}}|$, where $d_{\mathrm{img}}$ is the full image's detected diagonal.
+       
 
-We do not normalize it further for the demo. However, when the detection map needs to be normalized to $[0, 1]$, for instance when computing metrics on the results, we propose to clip the output to $[0, \gamma]$, then to divide the result by $\gamma$ to have an output in the desired range. Our experiments show that, on the Trace~\cite{trace} dataset used, a value of $\gamma=X$\qb{provide value} provided good results. This is, however, not a claim that this threshold is optimal for any usage. The choice of the threshold is left to the user.
-
-
-
+The computation of the forgery map is detailed in Algorithm~\ref{alg:global}. 
 
 \begin{algorithm}[h]
         \caption{Global algorithm}
@@ -378,11 +478,10 @@ We do not normalize it further for the demo. However, when the detection map nee
 \clearpage
 
 
-\iffalse
 
 %------------------------------------------------------------------------------
 \section{Experiments}
-To evaluate the ability of this method to detect the CFA pattern correctly, we take 15 images from the Raise Dataset~\cite{raise}, and demosaick them using the 7 algorithms available in LibRaw: Bilinear interpolation, AAHD, AHD, DCB, DHT, PPG and VNG. 11 of these images are of size $4948\times3280$, the other 4 are of size $4310\times2868$. The selected images can be seen in Fig.~\ref{fig:15images}.
+To evaluate the ability of this method to detect the CFA pattern correctly, we take 15 images from the Raise Dataset~\cite{raise}, and demosaic them using the 7 algorithms available in LibRaw: Bilinear interpolation, AAHD, AHD, DCB, DHT, PPG and VNG. 11 of these images are of size $4948\times3280$, the other 4 are of size $4310\times2868$. The selected images can be seen in Fig.~\ref{fig:15images}.
 
 \begin{figure}[ht]
     \centering
@@ -456,8 +555,11 @@ To evaluate the ability of this method to detect the CFA pattern correctly, we t
 \end{figure}
 
 \subsection{CFA pattern detection}
+We start by analyzing, at a global scale, whether the method is able to detect the correct pattern of the 15 images described above. Results can be seen in Table~\ref{tab:global}. One can see that the algorithms detects the correct grid in all 15 images when they are demosaiced with bilinear, AHD or DCB demosaicing. It also works very well on the PPG and VNG algorithms, despite a few mistakes in the full pattern identification against PPG or VNG-demosaiced images, which are solved when using bidirectional filters. When the image is demosaiced with AAHD or DHT, however, the algorithm consistently fails to detect even the diagonal, and consequently also fails on the full pattern, in both versions of the algorithm.
 \begin{table}[ht]
     \centering
+        \begin{subfigure}[t]{.5\linewidth}
+                \centering
     \begin{tabular}{lcc}
     \toprule
     Demosaicking & Diagonal & Full pattern\\
@@ -471,9 +573,31 @@ To evaluate the ability of this method to detect the CFA pattern correctly, we t
     VNG & \color{c0}15/15 & \color{c3}14/15\\
     \bottomrule
     \end{tabular}
-    \caption{Identification of the main diagonal and of the full pattern on the 15 images. The algorithm works very well when the demosaicking is done with AHD, DCB or Bilinear demosaicking, with a few errors on the full pattern against PPG- or VNG-demosaicked images. It fails to detect even the diagonal on AAHD- and DHT-demosaicked images}
+                \caption{Original isotropic intermediate values computation}
+        \end{subfigure}\hfill%
+        \begin{subfigure}[t]{.5\linewidth}
+                \centering
+    \begin{tabular}{lcc}
+    \toprule
+    Demosaicking & Diagonal & Full pattern\\
+    \midrule
+    AAHD & \color{c2}0/15 & \color{c2}0/15\\
+    AHD & \color{c0}15/15 & \color{c0}15/15\\
+    DCB & \color{c0}15/15 & \color{c0}15/15\\
+    DHT & \color{c2}2/15 & \color{c2}2/15\\
+    Bilinear & \color{c0}15/15 & \color{c0}15/15\\
+    PPG & \color{c0}15/15 & \color{c0}15/15\\
+    VNG & \color{c0}15/15 & \color{c0}15/15\\
+    \bottomrule
+    \end{tabular}
+                \caption{Bidirectional filters for intermediate values computation}
+        \end{subfigure}\hfill%
     \label{tab:global}
+    \caption{Identification of the main diagonal and of the full pattern on the 15 images. In its original version, algorithm works very well when the demosaicing is done with AHD, DCB or Bilinear demosaicing, with a few errors on the full pattern against PPG- or VNG-demosaiced images. It fails to detect even the diagonal on AAHD- and DHT-demosaiced images. Bidirectional filters for intermediate value computation yields perfect results on PPG and VNG, but still fails against AAHD- and DHT-demosaiced images.}
 \end{table}
+
+Looking at the results on image r0a2ff882t, on Figure~\ref{fig:bike}, we can see again that the results are dependant on the demosaicing algorithm used by the method. All windows are detected correctly against DCB and Bilinear demosicing, but the algorithm is confused on the diagonal pattern in the PPG-demosaiced image, though bidirectional filters for the intermediate value computation partly alleviate this problem. on the VNG-demosaiced image, there are also false detections on the diagonal itself. More importantly, the basket of the bike causes errors with AHD, PPG and VNG demosaicing. This is to be expected, as this is a textured region, but could easily be misinterpreted as a forgery.
+As can be seen on Figure~\ref{fig:bike_ahd}, however, using bidirectional filters yields a very low relative confidence for the identification of the basket's grid compared to the rest of the image. As a consequence, a reasonable thresholding level should still enable one to automatically discard this false detection.
 
 \def\s{.12\linewidth}
 \setlength{\tabcolsep}{0.2em}
@@ -523,9 +647,14 @@ With the AAHD and DHT algorithm, the method consistently detects the wrong diago
 \begin{subfigure}[t]{.5\linewidth}
 \includegraphics[width=\linewidth]{images/bike/ahd_bid_64_diff_rggb_bggr.png}
 \caption{Bidirectional}
-\end{subfigure}%
+\end{subfigure}
+        \label{fig:bike_ahd}
 \caption{This figure shows, on the AHD-demosaiced bicycle image, the difference of counts of intermediate values corresponding to the \textsc{rggb} and \textsc{bggr} patterns, on the red and blue channels. This count is what is used by the algorithm to decide on a grid. A negative difference corresponds to the correct \textsc{rggb} pattern, a positive difference to the incorrect \textsc{bggr} pattern. The difference is normalized by dividing it by the size of the block ($64\times64$). The textures in the basket area leads to a locally consistent shift in the position of the intermediate values. The error is slightly less prominent when a bidirectional mask is used, but is still consistently in favour of the wrong grid.}
 \end{figure}
+
+Most images that are found on the web are JPEG-compressed. It is thus vital to test the robustness of this algorithm to JPEG compression. JPEG compression quickly discards the highest frequencies, at which CFA artefacts are located. As a consequence, it would be illusory to expect results on heavily-compressed images. However, being able to detect the CFA pattern on low-compression images extends the application range of a CFA grid detection method. We show results after JPEG compression on Figure~\ref{fig:jpeg}. On the two studied images, we can see that even the highest-quality compression of 100 causes many errors in the pattern detection, though the algorithm remains largely usable, especially when only looking at the diagonal. At JPEG quality 98, the algorithm no longer detects the correct pattern, except in the easier case of the bilinear demosaicing algorithm. However, it can still detect the diagonal of most windows, albeit with a few errors. Finally, at JPEG quality 95, the algorithm is unable to find anything.
+
+All in all, JPEG compression remains the biggest limitation of this method, and of CFA detection in general. 
 
 \begin{figure}[ht]
         \centering
@@ -706,10 +835,11 @@ With the AAHD and DHT algorithm, the method consistently detects the wrong diago
         \end{tabular}
         \caption{Image r0ea0825ft, in \textsc{grbg} pattern}
 \end{subfigure}
-\caption{Detection of the method on $64\times64$ blocks on two images, uncompressed and submitted to JPEG compression of quality 100, 98 and 95. At JPEG quality 100 (the highest possible), although the correct pattern is usually found in most blocks of the image, errors between the two dual patterns start to appear. At JPEG quality 98, the method remains globally able to detect the main diagonal, but cannot distinguish the dual patterns anymore. At JPEG quality 95, the algorithm is unable to do any detection, even against bilinear demosaicking. Bidirectional intermediates provide a small boost to JPEG robustness, though it is not enough to make the algorithm reliable to use on JPEG-compressed images.}
+\caption{Detection of the method on $64\times64$ blocks on two images, uncompressed and submitted to JPEG compression of quality 100, 98 and 95. At JPEG quality 100 (the highest possible), although the correct pattern is usually found in most blocks of the image, errors between the two dual patterns start to appear. At JPEG quality 98, the method remains globally able to detect the main diagonal, but cannot distinguish the dual patterns anymore. At JPEG quality 95, the algorithm is unable to do any detection, even against bilinear demosaicing. Bidirectional intermediates provide a small boost to JPEG robustness, though it is not enough to make the algorithm reliable to use on JPEG-compressed images.}
 \label{fig:jpeg}
 \end{figure}
 
+In Figure~\ref{fig:noise}, we evaluate the robustness of the method to additive white Gaussian noise (AWGN). Because AWGN is not spatially correlated, it remains possible to detect the pattern in most cases with a noise of standard deviation $\sigma=5$ (on $[0, 255]$-ranged images). More localized error are made as the noise level increases, but thanks to the lack of spatial correlation of the noise (and consequently of the errors), the risk of mistakenly interpretating these as forgeries remains relatively low. Finally, we can see in Figure~\ref{fig:noise:3} that detecting the pattern over AWGN is made easier by using a larger window size, which averages the noise while keeping the artefacts. Of course, this comes at the price of potentially missing smaller forgeries.
 
 \begin{figure}[ht]
         \centering
@@ -937,6 +1067,8 @@ With the AAHD and DHT algorithm, the method consistently detects the wrong diago
 \label{fig:noise}
 \end{figure}
 
+Median filtering has often been proposed as a counter-forensics measure to hide forgeries\qb{cite}. Although it can be easily detected\qb{cite again}, we evaluate the robustness of the presented method to median filtering in Figure~\ref{fig:median}, using a median filter of footprint $\left(\begin{smallmatrix}0&1&0\\1&1&1\\0&1&0\end{smallmatrix}\right)$. We can see that the results of the method are completely inverted, because median filtering shifts the intermediate values. As a consequence, images on which the correct diagonal was found before filtering now yield wrong detection, whereas the method finds the correct pattern on AAHD- and DHT-demosaiced images, where it was failing without median filtering. Figure~\ref{fig:median_explained} explains this phenomenon with a toy example. 
+Without further elaborating, we note that only the diagonal detection is affected. As a consequence, if median filtering has been detected, detections can be made correct again by simply reverting the detected diagonal.
 \begin{figure}[ht]
         \centering
         
@@ -1044,7 +1176,44 @@ With the AAHD and DHT algorithm, the method consistently detects the wrong diago
 \caption{Results of the method on $64\times64$ blocks on two images, unprocessed and median-filtered. The median filter shifts the intermediate values on the green channel, thus confusing the algorithm on the diagonal pattern. Consequently, with the AAHD and DHT algorithms, which already shift the green channel intermediate values into the sampled pixels, the algorithms makes better detection after median-filtering than on the unprocessed image.}
 \label{fig:median}
 \end{figure}
-
+\begin{figure}[h]
+        \centering
+        \begin{subfigure}[t]{.47\linewidth}
+                \centering
+                \tikz[remember picture]\node[inner sep=0pt,outer sep=0pt] (a){
+                        \begin{tabular}{cccccccccc}
+                            \textcolor{c2}{139} & 240 & \textcolor{c2}{154} & 16 & \textcolor{c2}{94} & 56 & \textcolor{c2}{72} & 20\\
+                            92 & \cellcolor{c0!50}{\textcolor{c2}{131}} & 168 & \cellcolor{c0!50}{\textcolor{c2}{76}} & 72 & \cellcolor{c0!50}{\textcolor{c2}{94}} & 24 & \textcolor{c2}{43}\\
+                            \textcolor{c2}{85} & 24 & \cellcolor{c0!50}{\textcolor{c2}{100}} & 48 & \cellcolor{c0!50}{\textcolor{c2}{102}} & 224 & \cellcolor{c0!50}{\textcolor{c2}{130}} & 72\\
+                            60 & \cellcolor{c0!50}{\textcolor{c2}{107}} & 160 & \cellcolor{c0!50}{\textcolor{c2}{68}} & \cellcolor{c0!50}{64} & \cellcolor{c0!50}{\textcolor{c2}{122}} & 200 & \textcolor{c2}{153}\\
+                            \textcolor{c2}{92} & 184 & \cellcolor{c0!50}{\textcolor{c2}{125}} & 0 & \cellcolor{c0!50}{\textcolor{c2}{50}} & 0 & \cellcolor{c0!50}{\textcolor{c2}{133}} & 108\\
+                            52 & \cellcolor{c0!50}{\textcolor{c2}{155}} & 156 & \cellcolor{c0!50}{\textcolor{c2}{76}} & 136 & \cellcolor{c0!50}{\textcolor{c2}{117}} & 224 & \textcolor{c2}{127}\\
+                            \textcolor{c2}{146} & 228 & \cellcolor{c0!50}{\textcolor{c2}{111}} & 12 & \cellcolor{c0!50}{\textcolor{c2}{110}} & \cellcolor{c0!50}{108} & \cellcolor{c0!50}{\textcolor{c2}{107}} & 44\\
+                            56 & \textcolor{c2}{114} & 48 & \textcolor{c2}{90} & 184 & \textcolor{c2}{141} & 52 & \textcolor{c2}{90}\\
+                        \end{tabular}
+                };
+                \caption{Original array}
+        \end{subfigure}\hfill%
+        \begin{subfigure}[t]{.47\linewidth}
+                \centering
+                \tikz[remember picture]\node[inner sep=0pt,outer sep=0pt] (b){
+                        \begin{tabular}{cccccccccc}
+                            \textcolor{c2}{139} & 139 & \textcolor{c2}{168} & 94 & \textcolor{c2}{72} & 94 & \textcolor{c2}{56} & 43\\
+                            131 & \cellcolor{c0!50}{\textcolor{c2}{131}} & \cellcolor{c0!50}{131} & \textcolor{c2}{72} & 94 & \cellcolor{c0!50}{\textcolor{c2}{72}} & \cellcolor{c0!50}{72} & \textcolor{c2}{43}\\
+                            \textcolor{c2}{85} & \cellcolor{c0!50}{100} & \cellcolor{c0!50}{\textcolor{c2}{100}} & \cellcolor{c0!50}{76} & \cellcolor{c0!50}{\textcolor{c2}{72}} & \cellcolor{c0!50}{122} & \cellcolor{c0!50}{\textcolor{c2}{130}} & 123\\
+                            92 & \cellcolor{c0!50}{\textcolor{c2}{107}} & \cellcolor{c0!50}{107} & \textcolor{c2}{64} & \cellcolor{c0!50}{68} & \cellcolor{c0!50}{\textcolor{c2}{122}} & \cellcolor{c0!50}{133} & \textcolor{c2}{153}\\
+                            \textcolor{c2}{72} & \cellcolor{c0!50}{125} & \textcolor{c2}{156} & \cellcolor{c0!50}{68} & \textcolor{c2}{50} & \cellcolor{c0!50}{117} & \cellcolor{c0!50}{\textcolor{c2}{133}} & 133\\
+                            115 & \textcolor{c2}{156} & \cellcolor{c0!50}{125} & \cellcolor{c0!50}{\textcolor{c2}{76}} & \cellcolor{c0!50}{110} & \cellcolor{c0!50}{\textcolor{c2}{117}} & \cellcolor{c0!50}{127} & \textcolor{c2}{127}\\
+                            \textcolor{c2}{146} & \cellcolor{c0!50}{146} & \cellcolor{c0!50}{\textcolor{c2}{111}} & \cellcolor{c0!50}{90} & \cellcolor{c0!50}{\textcolor{c2}{110}} & \cellcolor{c0!50}{110} & \cellcolor{c0!50}{\textcolor{c2}{107}} & 100\\
+                            114 & \textcolor{c2}{114} & 111 & \textcolor{c2}{90} & 141 & \textcolor{c2}{141} & 107 & \textcolor{c2}{90}\\
+                        \end{tabular}
+                };
+                \tikz[remember picture,overlay]\draw[line width=1pt,-stealth,black] (a.east) -- (b.west)node[midway,above,text=black] {Median}node[midway, below, text=black]{filter};
+                \caption{After median filtering}
+        \end{subfigure}
+        \label{fig:median_explained}
+        \caption{Values on an array, before and after median filtering. The array corresponds to the green channel of an image in the \textsc{·gg·} position demosaiced with bilinear interpolation. \textcolor{c2}{Red values} correspond to positions where the value was interpolated. \hl{Highlighted} cells correspond to pixels that take and intermediate value. Notice the shift of intermediate values from one diagonal to another: originally, most intermediate values are found in the \textcolor{c2}{interpolated pixels}, but after median filtering, we can find more intermediate values in the sampled (black) position}
+\end{figure}
 \clearpage
 \subsection{Image forgery detection}
 The ultimate goal of the method is to find mosaic inconsistencies in an image. We use forgeries from the Trace database~\cite{trace} to evaluate the method. For the quantitative experiments, we use the CFA grid with exomasks dataset. For the qualitative experiments, we use samples from both the CFA grid and CFA algorithm datasets.\qb{TBD: describe the database.}
@@ -1058,15 +1227,15 @@ Except where specified otherwise, quantitative experiments are done with the Mat
                     \toprule
                     &MCC&IoU&F1\\
                     \midrule
-                    \scriptsize Isotropic, no thresholding&0.518&0.490&0.573\\
-                    \scriptsize Isotropic, hysteresis&0.598&0.556&0.633\\
-                    \scriptsize Bidirectional, no thresholding&0.543&0.515&0.595\\
-                    \scriptsize Bidirectional, hysteresis&0.588&0.550&0.628\\
+                    \scriptsize Isotropic, raw&0.518&0.490&0.573\\
+                    \scriptsize Isotropic, $\gamma=0.1$&0.592&0.567&0.622\\
+                    \scriptsize Bidirectional, raw&0.543&0.515&0.595\\
+                    \scriptsize Bidirectional, $\gamma=0.1$&0.610&0.584&0.642\\
                     \cmidrule{1-1}
                     Bammey~\cite{bammey20}&0.682&0.617&0.702\\
                    \bottomrule
             \end{tabular}
-                \caption{Results with isotropic and bidirectional intermediate values, with and without hysteresis thresholding, compared with Bammey~\cite{bammey20}. Both the presented method and Bammey are used on $32\times32$ windows.}
+                \caption{Results with isotropic and bidirectional intermediate values, raw and with connected confidence both continuous and thresholded at $\gamma=0.2$, compared with Bammey~\cite{bammey20}. Both the presented method and Bammey are used on $32\times32$ windows.}
         \end{subfigure}\hfill%
         \begin{subfigure}[b]{.48\linewidth}
                 \centering
@@ -1074,12 +1243,12 @@ Except where specified otherwise, quantitative experiments are done with the Mat
                         \toprule
                         &\scriptsize All images &\scriptsize  Same diagonal &\scriptsize  Different diagonal\\
                         \midrule
-                        \scriptsize Main grid & 0.574 & 0.509 & 0.554\\
-                        \scriptsize Diagonal & 0.426 & -0.001 & 0.671\\
-                        \scriptsize Combined & 0.570 & 0.503 & 0.637\\
+                        \scriptsize Main grid & 0.476 & 0.503 & 0.461\\
+                        \scriptsize Diagonal & 0.429 & 0.000 & 0.671\\
+                        \scriptsize Combined & 0.610 & 0.501 & 0.673\\
                         \bottomrule
                 \end{tabular}
-                \caption{Influence of using only main grid inconsistencies, diagonal inconsistencies and their combination (pointwise maximum of the two detection maps), on the full database, and when only looking at images whose authentic and forged parts share/do not share the same diagonal. The diagonal is shared in 364 out of the 1000 images of the dataset.}
+                \caption{Influence of using only main grid inconsistencies, diagonal inconsistencies and their combination (pointwise maximum of the two detection maps), on the full database, and when only looking at images whose authentic and forged parts share/do not share the same diagonal. The diagonal is shared in 364 out of the 1000 images of the dataset. By combining the two maps, the obtained results are almost as good as the diagonal map when the forgeries don't share their diagonal, almost as good as the full map when they do share the same diagonal (and thus cannot be detected by their diagonal), and overall much better than any of the two maps used alone.}
         \end{subfigure}
 
         \vspace{1em}
@@ -1091,10 +1260,10 @@ Except where specified otherwise, quantitative experiments are done with the Mat
                         \scriptsize Algorithm&All& AAHD & AHD & DCB & DHT & Bilinear & PPG & VNG\\
                         \scriptsize\#Images&1000&126&138&133&155&154&147&147\\
                         \midrule
-                        \scriptsize Score&0.589&0.311&0.705&0.754&0.338&0.732&0.709&0.561\\
+                        \scriptsize Score&0.610&0.375&0.755&0.763&0.350&0.649&0.766&0.613\\
                         \bottomrule
                 \end{tabular}
-                \caption{Results of the presented method depending on how the image was demosaicked. The method is used with bidirectional filters, on $64\times64$ windows, with hysteresis thresholding and combining the main grid and diagonal inconsistencies. Even though the method finds the wrong diagonal with the AAHD and DHT algorithms, it is consistent in doing so, and can thus still detect some forgeries, though not as well as against other demosaicking algorithms.}
+                \caption{Results of the presented method depending on how the image was demosaiced. The method is used with bidirectional filters, on $64\times64$ windows, with hysteresis thresholding and combining the main grid and diagonal inconsistencies. Even though the method finds the wrong diagonal with the AAHD and DHT algorithms, it is consistent in doing so, and can thus still detect some forgeries, though not as well as against other demosaicing algorithms.}
         \end{subfigure}
 
         \begin{subfigure}[b]{.56\linewidth}
@@ -1103,11 +1272,14 @@ Except where specified otherwise, quantitative experiments are done with the Mat
                         \toprule
                         &MCC&IoU&F1&\scriptsize Precision&\scriptsize Recall\\
                         \midrule
-                        \scriptsize No thresholding & 0.522 & 0.490 & 0.578 & 0.579 & 0.706\\
-                        \scriptsize Hysteresis & 0.589 & 0.573 & 0.620 & 0.663 & 0.639\\
+                        %\scriptsize No thresholding & 0.464 & 0.441 & 0.522 & 0.478 & 0.810\\
+                        \scriptsize $\gamma=0.05$ & 0.543 & 0.518 & 0.590 & 0.570 & 0.733\\
+                        \scriptsize $\gamma=0.1$ & 0.610 & 0.584 & 0.642 & 0.670 & 0.650\\
+                        \scriptsize $\gamma=0.15$ & 0.531 & 0.513 & 0.558 & 0.600 & 0.535\\
+                        \scriptsize $\gamma=0.2$ & 0.382&0.371&0.400&0.433&0.382\\
                         \bottomrule
                 \end{tabular}
-                \caption{Results with different metrics, with and without hysteresis thresholding. The method is used with bidirectional filters, on $64\times64$ windows and combining the main and diagonal inconsistencies. Even though thresholding slightly lowers the recall, its gain is precision is much larger, thus yielding better MCC, IoU and F1 scores.}
+                \caption{Results with different metrics, raw and with confidence thresholding. The method is used with bidirectional filters, on $64\times64$ windows and combining the main and diagonal inconsistencies. Even though thresholding slightly lowers the recall, its gain in precision is much larger, thus yielding better MCC, IoU and F1 scores.}
         \end{subfigure}\hfill%
         \begin{subfigure}[b]{.4\linewidth}
                 \centering
@@ -1115,15 +1287,15 @@ Except where specified otherwise, quantitative experiments are done with the Mat
                         \toprule
                         \scriptsize Window size & MCC\\
                         \midrule
-                        16 & 0.528\\
-                        32 & 0.588\\
-                        64 & 0.589\\
-                        128 & 0.501\\
+                        16 & 0.592\\
+                        32 & 0.610\\
+                        64 & 0.412\\
+                        128 & 0.163\\
                         \bottomrule
                 \end{tabular}
-                \caption{Results with different window sizes. The method is used with bidirectional filters, hysteresis thresholding and combination of the main and diagonal inconsistencies.}
+                \caption{Results with different window sizes. The method is used with bidirectional filters, continuous normalisation at $\gamma=0.2$, $32\times32$ windows.}
         \end{subfigure}
-        \caption{Quantitative experiments on the Trace database~\cite{trace}}
+        \caption{Quantitative experiments on the Trace database~\cite{trace}. Where parameters are not specified, these are used: bidirectional filters, continuous normalization at $\gamma=0.2$, $32\times32$ windows, combined results of the full pattern and diagonal maps.}
         \label{tab:quantitative}
 \end{table}
 
@@ -1173,7 +1345,7 @@ Except where specified otherwise, quantitative experiments are done with the Mat
         \end{subfigure}\hfill%
         \begin{subfigure}[t]{.365\linewidth}
                 \includegraphics[width=\linewidth]{images/aahd_nodual/out_diff_grid.png}
-                \caption{Normalized difference between the two patterns sharing the same diagonal.}
+                \caption{Normalized difference between the patterns with the detected diagonal.}
         \end{subfigure}
         \caption{Image r15919202t of the \texttt{cfa\_grid} dataset, with endomask. Both regions are demosaiced with the AAHD algorithm, the authentic region in the \textsc{grbg} pattern, the forged region in the \textsc{bggr} pattern. Although the method finds the wrong diagonal in both regions, it still finds that the two regions use a different diagonal. However, because the diagonal is wrong, the rest of the pattern cannot be accurately detected.}
 \end{figure}
@@ -1227,7 +1399,6 @@ Here is the conclusion
 %------------------------------------------------------------------------------
 \section*{Acknowledgment}
 
-\fi
 %------------------------------------------------------------------------------
 \section*{Image Credits}
 {\small\flushleft
